@@ -1,0 +1,4 @@
+numpy==1.24.2
+pandas==2.0.0
+spotipy==2.23.0
+
