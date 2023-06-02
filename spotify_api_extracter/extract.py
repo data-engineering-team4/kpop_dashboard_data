@@ -91,6 +91,8 @@ def scraping_kpop_artist() :
     offset = 0
     limit = 50
     cnt = 0
+    
+    k_genre = ["k-pop", "k-pop girl group", "k-pop boy group", "k-rap", "korean r&b", "korean pop", "korean ost", "k-rap", "korean city pop","classic k-pop", "korean singer-songwriter"]
 
     while True: 
         
@@ -112,8 +114,9 @@ def scraping_kpop_artist() :
             for idx, artist in enumerate(artists) :
                 artist_id, artist_name = artist["id"], artist["name"]
                 
+
                 # search k-pop 조회 결과, 1000개가 조회되는데, k-pop에 해당하지 않는 artist 존재
-                if "k-pop" not in artist["genres"]:
+                if len(list(set(artist["genres"]).intersection(k_genre)))==0:
                     continue
                 # 추출 대상
                 result_artist = [
@@ -145,6 +148,8 @@ def scraping_kpop_artist() :
     mylogger.info(f"ARTIST FUNC [SUCCESS] || scraping_kpop_artist 실행 완료 - 최종 추출 수량 :: {cnt}")
     
     return total_artist_list
+
+
 
 def artist_albums_track(access_token, album_key) :
     """
@@ -268,6 +273,8 @@ def artist_albums_track(access_token, album_key) :
         
     return albums_track_list, albums_track_issue_list
 
+
+
 def run_thread(start, end, data_q, error_q, token_queue) : 
     cnt = 0
     
@@ -365,29 +372,139 @@ def run_thread(start, end, data_q, error_q, token_queue) :
     mylogger.info(f"THRED WRITE {artist_key} ALBUM on kpop_artist_album_data.csv")
     mylogger.info(f"THREAD DONE || 완료된 artist_key : {artist_key} 완료된 aritst count :: {cnt}")
 
+def extract_track(token_queue) :
+    total_track_list = []
+    # csv load
+    # with open('./load/global_popular_track_id_list.csv', 'r') as csvfile:
+    #     csvreader = csv.reader(csvfile)
+    #     header = next(csvreader)
+    #     for row in csvreader:
+    #         total_track_list.append(row[0])
+    
+    f= open(DATA_PATH + '/global_popular_track.csv', 'w')
+    wr = csv.writer(f)
+    wr.writerow(['id' , 'name', 'track_href','external_url' , 'artist_id', 'artist_name', 'album_id', 'track_number', 'acousticness', 'analysis_url', 'danceability', 'duration_ms', 'energy',  'instrumentalness', 'liveness', 'loudness', 'mode', 'speechiness', 'tempo', 'time_signature', 'valence'])
+    access_token = token_queue.get()
+    track_json = dict()
+    for idx, track_key in enumerate(total_track_list) :
+            
+        # TRACK 호출
+        track_url = f"https://api.spotify.com/v1/tracks/{track_key}"
+        r = requests.get(track_url, headers=access_token)
+        track = r.json()
+        
+        track_json[track_key] = {
+            "track_id" : track_key,
+            "track_name" : track["name"], 
+            "track_external_urls" : track["external_urls"]["spotify"],
+            "artist_name" : track["artists"][0]["name"],
+            "artist_id" : track["artists"][0]["id"],
+            "album_id" : track["album"]["id"],
+            "track_number" : track["track_number"]            
+        }        
+        mylogger.info(f"[{idx+1}/{len(total_track_list)}] - track_id :: {track_key}")
+    mylogger.info(f"TRACK INFO 스캔 완료")
+    
+
+    token_queue = queue.Queue()
+    for client_id, client_secret in client_info :
+        token_queue.put(get_access_token(client_id, client_secret))
+    
+    for idx, track_key in enumerate(total_track_list) :
+        access_token = token_queue.get()
+        # AUDIO_FEATURE 호출 - Track : feature
+        audio_url = f'https://api.spotify.com/v1/audio-features/{track_key}'
+        res = requests.get(audio_url, headers=access_token)
+        feature = res.json()
+        if res.status_code != 200 :
+            print(res.text)
+            time.sleep(5)
+        # change_feature : NULL 값이 많이 존재 : 없을 시 None 대체
+        def change_feature(feature):
+            # 노가다 숨기기
+            feature["acousticness"] = feature.get("acousticness", None)
+            feature["analysis_url"] = feature.get("analysis_url", None)
+            feature["danceability"] = feature.get("danceability", None)
+            feature["duration_ms"] = feature.get("duration_ms", None)
+            feature["energy"] = feature.get("energy", None)
+            feature["feature_id"] = feature.get("id", None)
+            feature["instrumentalness"] = feature.get("instrumentalness", None)
+            feature["liveness"] = feature.get("liveness", None)
+            feature["loudness"] = feature.get("loudness", None)
+            feature["mode"] = feature.get("mode", None)
+            feature["speechiness"] = feature.get("speechiness", None)
+            feature["tempo"] = feature.get("tempo", None)
+            feature["time_signature"] = feature.get("time_signature", None)
+            feature["valence"] = feature.get("valence", None)
+            feature["track_href"] = feature.get("track_href", None)
+            return feature
+        feature = change_feature(feature)
+
+        track_result = [
+                    track_key
+                    ,track_json[track_key]["track_id"]
+                    ,feature["track_href"]
+                    ,track_json[track_key]["track_external_urls"]
+                    ,track_json[track_key]["artist_id"]
+                    ,track_json[track_key]["artist_name"]
+                    ,track_json[track_key]["album_id"]
+                    ,track_json[track_key]["track_number"]
+                    
+                    # feature
+                    ,feature["acousticness"]
+                    ,feature["analysis_url"]
+                    ,feature["danceability"]
+                    ,feature["duration_ms"]
+                    ,feature["energy"]
+                    ,feature["instrumentalness"]
+                    ,feature["liveness"]
+                    ,feature["loudness"]
+                    ,feature["mode"]
+                    ,feature["speechiness"]
+                    ,feature["tempo"]
+                    ,feature["time_signature"]
+                    ,feature["valence"]
+        ]
+        
+        wr.writerow(track_result)
+        token_queue.put(access_token)
+        mylogger.info(f"TRACK DONE [{idx+1}/{len(total_track_list)}] || track_id :: {track_key}")
+    f.close()
+
+
 
 if __name__ == "__main__" :
     
     # secret json 가져오기 - extract와 동일한 경로에 secret 업로드
     with open('./secret.json', 'r') as jsonfile :
-        client_info = json.loads(jsonfile)
+        client_info = json.load(jsonfile)
     
     # main token 
     CLIENT_ID = client_info["client_id"]
     CLIENT_SECRET = client_info["client_secret"]
     
+    # 대표 TOKEN
     access_token = get_access_token(CLIENT_ID, CLIENT_SECRET) # Artist 추출할 때 처음 지정할 token 생성
-    
+
+    # TOKEN queue 만들기
+    token_queue = queue.Queue()
+    for client_id, client_secret in client_info["client_info"] :
+        token_queue.put(get_access_token(client_id, client_secret))
+
+
     # FILE LOCATION 고정 변수
     DATA_PATH = './result/' + ymd + '/'
     ERROR_PATH = './errors/' + ymd + '/'
-    artist_path = DATA_PATH + 'kpop_artist_data.csv'                            # artist csv 저장 경로
+    artist_path = DATA_PATH + 'kpop_artist_data_1000.csv'                            # artist csv 저장 경로
     artist_album_path = DATA_PATH + 'kpop_artist_album_data.csv'                # artist의 album csv 저장 경로
     artist_album_track_path = DATA_PATH + 'kpop_artist_album_track_data.csv'    # track csv 저장 경로
     os.makedirs(DATA_PATH, exist_ok = True) 
 
     # Logger
     mylogger = make_log(timestamp)
+    
+    # extract_track(token_queue)
+
     
     #####################################################
     #               ARTIST 추출  
@@ -404,7 +521,7 @@ if __name__ == "__main__" :
             for row in csvreader:
                 total_artist_list.append(row[0])
     time.sleep(1)
-    
+
     # TEST (artist 10명에 대한 album & track 만 가져오기)
     # total_artist_list = total_artist_list[:10]
     
@@ -418,10 +535,6 @@ if __name__ == "__main__" :
         csvwriter = csv.writer(csvfile)
         csvwriter.writerow(['id' , 'name', 'track_href','external_url' , 'artist_id', 'artist_name', 'album_id', 'track_number', 'acousticness', 'analysis_url', 'danceability', 'duration_ms', 'energy',  'instrumentalness', 'liveness', 'loudness', 'mode', 'speechiness', 'tempo', 'time_signature', 'valence'])
 
-    # TOKEN queue 만들기
-    token_queue = queue.Queue()
-    for client_id, client_secret in client_info["client_info"] :
-        token_queue.put(get_access_token(client_id, client_secret))
     
     #################################################
     #                   Thread
@@ -466,7 +579,7 @@ if __name__ == "__main__" :
     print('=====================================')
     mylogger.info(f"data_count :: {data_count}")
     mylogger.info(f"error_count :: {error_count}")
-    
+    sys.exit(0)
     #########################################################
     # S3에 업로드 
     # - 다음 명령어는 s3 cli 설치해서 aws configure을 등록해주어야 함

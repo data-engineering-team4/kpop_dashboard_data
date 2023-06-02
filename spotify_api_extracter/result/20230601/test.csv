@@ -1,0 +1,2 @@
+id,name,external_url,artist_id,artist_name,image_url,release_date,total_tracks,bucket_url
+00A1XYsx9tgJGnIHVn1X9u,Yellow Flower,https://open.spotify.com/album/00A1XYsx9tgJGnIHVn1X9u,0XATRDCYuuGhk0oE7C0o5G,MAMAMOO,https://i.scdn.co/image/ab67616d0000b2731ea977fb83d93e179882f643,2022-06-01,7,https://spotify-kpop-analysis.s3.us-west-2.amazonaws.com/image/test.jpg
